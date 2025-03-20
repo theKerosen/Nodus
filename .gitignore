@@ -1,2 +1,4 @@
-__pycache__
-venv/
+client/.env
+tickrate/bin
+tickrate/build
+client/node_modules

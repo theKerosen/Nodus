@@ -1,0 +1,17 @@
+{
+    "name": "client",
+    "version": "1.0.0",
+    "description": "",
+    "license": "ISC",
+    "author": "",
+    "type": "commonjs",
+    "main": "client.js",
+    "dependencies": {
+        "dotenv": "^16.4.7",
+        "google-protobuf": "^3.21.4",
+        "protobufjs": "^6.11.3",
+        "steam-user": "^5.2.0",
+        "ws": "^8.18.0",
+        "yarn": "^1.22.22"
+    }
+}
