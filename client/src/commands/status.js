@@ -1,27 +1,58 @@
-const { EmbedBuilder } = require("../components/builders/embedBuilder");
-const { ButtonBuilder } = require("../components/builders/buttonBuilder");
-const { ActionRowBuilder } = require("../components/builders/actionRow");
-const { ButtonStyle } = require("../components/builders/buttonStyle");
+// commands/status.js
+const {
+    EmbedBuilder,
+    ButtonBuilder,
+    ActionRowBuilder,
+    ButtonStyle,
+    InteractionCollector,
+} = require("nyowzers-lib"); // Use correct lib name
+
+// Helper function to parse status safely
+function parseCsStatus(rawDataString) {
+    try {
+        if (!rawDataString) return null;
+        // Ensure rawDataString is actually a string before parsing
+        if (typeof rawDataString !== "string") {
+            console.warn(
+                "[ParseCSStatus] Received non-string data:",
+                typeof rawDataString,
+            );
+            // Attempt to stringify if it's an object (might happen if logic changes)
+            if (typeof rawDataString === "object")
+                rawDataString = JSON.stringify(rawDataString);
+            else return null; // Cannot parse non-string/object
+        }
+        return JSON.parse(rawDataString);
+    } catch (e) {
+        console.error("[ParseCSStatus] Failed to parse CS status JSON:", e);
+        return null;
+    }
+}
 
 module.exports = {
     name: "status",
     aliases: ["s"],
-    cooldown: 2000,
     description: "Status do Counter-Strike 2",
-    init: async (context, bot) => {
-        context.sharedData = bot.statusDataMap.get("counterStrike");
-    },
+    // Cooldown handled by commandHandler
+
     subcommands: {
         services: {
             aliases: ["s", "svc"],
-            cooldown: 3000,
             devOnly: false,
             description: "Status de todos os serviços",
-            execute: async (bot, context, args) => {
-                if (!context.sharedData) {
-                    return await context.reply(
-                        "Não foi possível obter informações dos servidores. (Dados ainda não disponíveis ou API instável!)",
-                    );
+            execute: async (client, message, args) => {
+                const rawData = client.statusDataMap.get("counterStrike");
+                const statusData = parseCsStatus(rawData);
+
+                if (
+                    !statusData?.data?.status?.services ||
+                    !statusData?.data?.status?.matchmaker
+                ) {
+                    return message
+                        .reply(
+                            "Não foi possível obter informações dos servidores. (Dados ainda não disponíveis ou API instável!)",
+                        )
+                        .catch(console.error);
                 }
 
                 const serviceStateMapping = {
@@ -32,11 +63,9 @@ module.exports = {
                 };
 
                 try {
-                    const req = JSON.parse(context.sharedData);
-                    const { services, matchmaker } = req.data.status;
-
+                    const { services, matchmaker } = statusData.data.status;
                     const embed = new EmbedBuilder()
-                        .setTitle("🌐 Serviços")
+                        .setTitle("🌐 Serviços CS")
                         .setThumbnail(
                             "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/730/header.jpg?t=1729703045",
                         )
@@ -45,57 +74,65 @@ module.exports = {
                         .addFields([
                             {
                                 name: "🔑 Sessões de Logon",
-                                value: `>${serviceStateMapping[services.SessionsLogon.toLowerCase()] || serviceStateMapping.offline}`,
+                                value: `>${serviceStateMapping[services.SessionsLogon?.toLowerCase()] ?? serviceStateMapping.offline}`,
                                 inline: false,
                             },
                             {
                                 name: "👥 Comunidade Steam",
-                                value: `>${serviceStateMapping[services.SteamCommunity.toLowerCase()] || serviceStateMapping.offline}`,
+                                value: `>${serviceStateMapping[services.SteamCommunity?.toLowerCase()] ?? serviceStateMapping.offline}`,
                                 inline: false,
                             },
                             {
                                 name: "🎮 Criador de Partidas",
-                                value: `>${serviceStateMapping[matchmaker.scheduler.toLowerCase()] || serviceStateMapping.offline}`,
+                                value: `>${serviceStateMapping[matchmaker.scheduler?.toLowerCase()] ?? serviceStateMapping.offline}`,
                                 inline: false,
                             },
-                        ])
-                        .build();
+                        ]);
 
-                    await context.reply({ embeds: [embed] });
+                    await message.reply({ embeds: [embed.toJSON()] });
                 } catch (error) {
-                    console.error("Error fetching services:", error);
-                    await context.reply({
-                        content: "A API não está acessível no momento.",
-                    });
+                    console.error("Error processing services status:", error);
+                    await message
+                        .reply({
+                            content:
+                                "Ocorreu um erro ao processar o status dos serviços.",
+                        })
+                        .catch(console.error);
                 }
             },
         },
         datacenters: {
             aliases: ["d", "dc"],
             devOnly: false,
-            cooldown: 5000,
             description: "Status de todos os datacenters",
-            execute: async (bot, context, args) => {
-                if (!context.sharedData) {
-                    return await context.reply(
-                        "Não foi possível obter informações dos servidores. (Dados ainda não disponíveis ou API instável!)",
-                    );
+            execute: async (client, message, args) => {
+                const rawData = client.statusDataMap.get("counterStrike");
+                const statusData = parseCsStatus(rawData);
+
+                if (!statusData?.data?.status?.datacenters) {
+                    return message
+                        .reply(
+                            "Não foi possível obter informações dos datacenters. (Dados indisponíveis ou API instável!)",
+                        )
+                        .catch(console.error);
                 }
 
                 try {
-                    const req = JSON.parse(context.sharedData);
                     const datacenters = Object.entries(
-                        req.data.status.datacenters,
+                        statusData.data.status.datacenters,
                     )
-                        .filter(([_, value]) => value.capacity && value.load)
+                        .filter(
+                            ([_, value]) =>
+                                value && value.capacity && value.load,
+                        )
                         .sort(([keyA], [keyB]) =>
                             keyA === "Brazil" ? -1 : keyB === "Brazil" ? 1 : 0,
                         );
 
                     if (datacenters.length === 0) {
-                        return await context.reply({
-                            content: "Nenhum datacenter disponível.",
-                        });
+                        return message
+                            .reply({ content: "Nenhum datacenter disponível." })
+                            .catch(console.error);
                     }
 
                     const loadStateMapping = {
@@ -105,37 +142,44 @@ module.exports = {
                         low: "Baixa",
                         idle: "Inativa",
                     };
-
                     const capacityStateMapping = {
                         full: "Máxima",
                         high: "Alta ⚠️",
                         medium: "Média",
                         idle: "Ociosa",
                     };
-
                     const getLoadStatus = (state) =>
-                        loadStateMapping[state.toLowerCase()] ||
+                        loadStateMapping[state?.toLowerCase()] ??
                         loadStateMapping.idle;
                     const getCapacityStatus = (state) =>
-                        capacityStateMapping[state.toLowerCase()] ||
+                        capacityStateMapping[state?.toLowerCase()] ??
                         capacityStateMapping.idle;
 
-                    const embed_pag = new EmbedBuilder();
-                    embed_pag.setPagination(datacenters, 3, (chunk, index) => {
+                    const itemsPerPage = 3;
+                    const totalPages = Math.ceil(
+                        datacenters.length / itemsPerPage,
+                    );
+                    let currentPageIndex = 0;
+
+                    const generatePageEmbed = (pageIndex) => {
+                        const start = pageIndex * itemsPerPage;
+                        const chunk = datacenters.slice(
+                            start,
+                            start + itemsPerPage,
+                        );
                         const embed = new EmbedBuilder()
-                            .setTitle(`🌐 Datacenters - Página ${index + 1}`)
-                            .setThumbnail(
-                                "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/730/header.jpg?t=1729703045",
+                            .setTitle(
+                                `🌐 Datacenters - Página ${pageIndex + 1}/${totalPages}`,
                             )
+                            .setThumbnail(/* ... url ... */)
                             .setColor(0x2febbf)
                             .setDescription("📊 Status atual dos datacenters")
-                            .setFooter(
-                                "Essa mensagem se auto-destruirá em 1 minuto.",
-                            );
-
+                            .setFooter({
+                                text: "Componentes desativados após 1 minuto.",
+                            });
                         for (const [key, value] of chunk) {
                             embed.addFields([
-                                { name: `📍 ${key}`, value: "‎", inline: true },
+                                { name: `📍 ${key}`, value: " ", inline: true },
                                 {
                                     name: "🖥️ Capacidade",
                                     value: getCapacityStatus(value.capacity),
@@ -148,92 +192,104 @@ module.exports = {
                                 },
                             ]);
                         }
-
-                        return embed.build();
-                    });
-
-                    const pages = { [context.author.id]: 0 };
-
-                    const createActionRow = (pages, userId, embedBuilder) => {
-                        const backward = new ButtonBuilder()
-                            .setCustomId("s_backward")
-                            .setEmoji("⬅️")
-                            .setLabel("\u200b")
-                            .setStyle(ButtonStyle.PRIMARY)
-                            .setDisabled(pages[userId] === 0)
-                            .build();
-
-                        const forward = new ButtonBuilder()
-                            .setCustomId("s_forward")
-                            .setEmoji("➡️")
-                            .setLabel("\u200b")
-                            .setStyle(ButtonStyle.PRIMARY)
-                            .setDisabled(
-                                pages[userId] ===
-                                    embedBuilder.getAllPages().length - 1,
-                            )
-                            .build();
-
-                        return new ActionRowBuilder()
-                            .addComponent(backward)
-                            .addComponent(forward)
-                            .build();
+                        return embed.toJSON();
                     };
 
-                    const reply = await context.reply({
-                        embeds: [embed_pag.getPage(pages[context.author.id])],
-                        components: [
-                            createActionRow(
-                                pages,
-                                context.author.id,
-                                embed_pag,
-                            ),
-                        ],
+                    const generateActionRow = (pageIndex) => {
+                        const backward = new ButtonBuilder()
+                            .setCustomId("dc_backward")
+                            .setEmoji("⬅️")
+                            .setStyle(ButtonStyle.PRIMARY)
+                            .setDisabled(pageIndex === 0);
+                        const forward = new ButtonBuilder()
+                            .setCustomId("dc_forward")
+                            .setEmoji("➡️")
+                            .setStyle(ButtonStyle.PRIMARY)
+                            .setDisabled(pageIndex >= totalPages - 1);
+                        return new ActionRowBuilder()
+                            .addComponents(backward, forward)
+                            .toJSON();
+                    };
+
+                    const replyMessage = await message.reply({
+                        embeds: [generatePageEmbed(currentPageIndex)],
+                        components:
+                            totalPages > 1
+                                ? [generateActionRow(currentPageIndex)]
+                                : [],
                     });
+
+                    if (!replyMessage || totalPages <= 1) return;
 
                     const filter = (interaction) =>
-                        interaction.user.id === context.author.id;
-                    const collector = reply.createMessageComponentCollector({
-                        time: 60000,
-                        filter,
-                    });
+                        interaction.user.id === message.author.id &&
+                        interaction.isButton();
+                    const collector = new InteractionCollector(
+                        client,
+                        { filter, time: 60000 },
+                        replyMessage,
+                    );
 
                     collector.on("collect", async (interaction) => {
-                        await interaction.defer();
-                        if (
-                            interaction.data.custom_id === "s_backward" &&
-                            pages[context.author.id] > 0
-                        ) {
-                            pages[context.author.id]--;
-                        } else if (
-                            interaction.data.custom_id === "s_forward" &&
-                            pages[context.author.id] <
-                                embed_pag.getAllPages().length - 1
-                        ) {
-                            pages[context.author.id]++;
-                        }
+                        try {
+                            await interaction.deferUpdate();
+                            if (
+                                interaction.customId === "dc_backward" &&
+                                currentPageIndex > 0
+                            ) {
+                                currentPageIndex--;
+                            } else if (
+                                interaction.customId === "dc_forward" &&
+                                currentPageIndex < totalPages - 1
+                            ) {
+                                currentPageIndex++;
+                            } else {
+                                return;
+                            }
 
-                        await reply.edit({
-                            embeds: [
-                                embed_pag.getPage(pages[context.author.id]),
-                            ],
-                            components: [
-                                createActionRow(
-                                    pages,
-                                    context.author.id,
-                                    embed_pag,
-                                ),
-                            ],
-                        });
+                            await replyMessage.edit({
+                                embeds: [generatePageEmbed(currentPageIndex)],
+                                components: [
+                                    generateActionRow(currentPageIndex),
+                                ],
+                            });
+                        } catch (error) {
+                            console.error(
+                                "Error updating pagination interaction:",
+                                error,
+                            );
+                        }
                     });
 
-                    collector.on("end", async () => {
-                        await reply.delete();
-                        console.log("Collector ended, message deleted.");
+                    collector.on("end", async (collected, reason) => {
+                        console.log(
+                            `Datacenter collector ended for message ${replyMessage?.id}. Reason: ${reason}`,
+                        );
+                        if (!replyMessage || replyMessage.deleted) return; // Check if message still exists
+                        try {
+                            const finalEmbed =
+                                generatePageEmbed(currentPageIndex);
+                            await replyMessage.edit({
+                                embeds: [finalEmbed],
+                                components: [],
+                            });
+                        } catch (error) {
+                            console.warn(
+                                "Could not edit components off message after collector end:",
+                                error.message,
+                            );
+                        }
                     });
                 } catch (error) {
-                    console.error("Error fetching datacenters:", error);
-                    await context.reply({ content: "Algo deu errado." });
+                    console.error(
+                        "Error processing datacenters status:",
+                        error,
+                    );
+                    await message
+                        .reply({
+                            content: "Algo deu errado ao buscar datacenters.",
+                        })
+                        .catch(console.error);
                 }
             },
         },

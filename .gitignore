@@ -1,4 +1,5 @@
-client/.env
-tickrate/bin
-tickrate/build
-client/node_modules
+.env
+bin/
+build/
+node_modules/
+nyowzers-lib/
