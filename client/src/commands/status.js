@@ -1,26 +1,18 @@
 // commands/status.js
-const {
-    EmbedBuilder,
-    ButtonBuilder,
-    ActionRowBuilder,
-    ButtonStyle,
-    InteractionCollector,
-} = require("nyowzers-lib"); // Use correct lib name
+const { createServicesStatusImage } = require("../utils/imageGenerator");
 
-// Helper function to parse status safely
 function parseCsStatus(rawDataString) {
     try {
         if (!rawDataString) return null;
-        // Ensure rawDataString is actually a string before parsing
         if (typeof rawDataString !== "string") {
             console.warn(
                 "[ParseCSStatus] Received non-string data:",
                 typeof rawDataString,
             );
-            // Attempt to stringify if it's an object (might happen if logic changes)
+
             if (typeof rawDataString === "object")
                 rawDataString = JSON.stringify(rawDataString);
-            else return null; // Cannot parse non-string/object
+            else return null;
         }
         return JSON.parse(rawDataString);
     } catch (e) {
@@ -33,74 +25,56 @@ module.exports = {
     name: "status",
     aliases: ["s"],
     description: "Status do Counter-Strike 2",
-    // Cooldown handled by commandHandler
 
     subcommands: {
         services: {
             aliases: ["s", "svc"],
             devOnly: false,
-            description: "Status de todos os serviços",
+            description: "Status dos serviços principais do CS.",
             execute: async (client, message, args) => {
                 const rawData = client.statusDataMap.get("counterStrike");
                 const statusData = parseCsStatus(rawData);
 
-                if (
-                    !statusData?.data?.status?.services ||
-                    !statusData?.data?.status?.matchmaker
-                ) {
+                if (rawData === undefined || rawData === null) {
                     return message
                         .reply(
-                            "Não foi possível obter informações dos servidores. (Dados ainda não disponíveis ou API instável!)",
+                            "Ainda não foi possível obter dados da API de status. Verificando novamente em breve.",
                         )
                         .catch(console.error);
                 }
 
-                const serviceStateMapping = {
-                    normal: "Normal",
-                    delayed: "Atrasado ⚠️",
-                    surge: "Sobrecarga ⚠️",
-                    offline: "Offline ⚠️",
-                };
-
                 try {
-                    const { services, matchmaker } = statusData.data.status;
-                    const embed = new EmbedBuilder()
-                        .setTitle("🌐 Serviços CS")
-                        .setThumbnail(
-                            "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/730/header.jpg?t=1729703045",
-                        )
-                        .setColor(0x2febbf)
-                        .setDescription("📊 Status atual dos serviços")
-                        .addFields([
-                            {
-                                name: "🔑 Sessões de Logon",
-                                value: `>${serviceStateMapping[services.SessionsLogon?.toLowerCase()] ?? serviceStateMapping.offline}`,
-                                inline: false,
-                            },
-                            {
-                                name: "👥 Comunidade Steam",
-                                value: `>${serviceStateMapping[services.SteamCommunity?.toLowerCase()] ?? serviceStateMapping.offline}`,
-                                inline: false,
-                            },
-                            {
-                                name: "🎮 Criador de Partidas",
-                                value: `>${serviceStateMapping[matchmaker.scheduler?.toLowerCase()] ?? serviceStateMapping.offline}`,
-                                inline: false,
-                            },
-                        ]);
+                    await message.channel.sendTyping().catch(console.warn);
+                    const imageBuffer =
+                        await createServicesStatusImage(statusData);
+                    if (!imageBuffer || imageBuffer.length === 0) {
+                        return message
+                            .reply({
+                                content: "Falha ao gerar imagem de status.",
+                            })
+                            .catch(console.error);
+                    }
+                    const imageName = `cs_services_status_${Date.now()}.png`;
 
-                    await message.reply({ embeds: [embed.toJSON()] });
+                    await message.reply({
+                        content: `*${new Date().toLocaleString("pt-BR")}*`,
+                        files: [{ attachment: imageBuffer, name: imageName }],
+                    });
                 } catch (error) {
-                    console.error("Error processing services status:", error);
+                    console.error(
+                        "Error processing or generating services status image:",
+                        error,
+                    );
                     await message
                         .reply({
                             content:
-                                "Ocorreu um erro ao processar o status dos serviços.",
+                                "Ocorreu um erro ao gerar a imagem de status.",
                         })
                         .catch(console.error);
                 }
             },
         },
+        /*
         datacenters: {
             aliases: ["d", "dc"],
             devOnly: false,
@@ -171,7 +145,9 @@ module.exports = {
                             .setTitle(
                                 `🌐 Datacenters - Página ${pageIndex + 1}/${totalPages}`,
                             )
-                            .setThumbnail(/* ... url ... */)
+                            .setThumbnail(
+                                "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/730/header.jpg?t=1729703045",
+                            )
                             .setColor(0x2febbf)
                             .setDescription("📊 Status atual dos datacenters")
                             .setFooter({
@@ -218,7 +194,6 @@ module.exports = {
                                 ? [generateActionRow(currentPageIndex)]
                                 : [],
                     });
-
                     if (!replyMessage || totalPages <= 1) return;
 
                     const filter = (interaction) =>
@@ -265,7 +240,7 @@ module.exports = {
                         console.log(
                             `Datacenter collector ended for message ${replyMessage?.id}. Reason: ${reason}`,
                         );
-                        if (!replyMessage || replyMessage.deleted) return; // Check if message still exists
+                        if (!replyMessage || replyMessage.deleted) return;
                         try {
                             const finalEmbed =
                                 generatePageEmbed(currentPageIndex);
@@ -293,5 +268,6 @@ module.exports = {
                 }
             },
         },
+        */
     },
 };

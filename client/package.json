@@ -7,9 +7,11 @@
     "type": "commonjs",
     "main": "main.js",
     "dependencies": {
+        "canvas": "^3.1.0",
         "dotenv": "^16.4.7",
+        "form-data": "^4.0.2",
         "google-protobuf": "^3.21.4",
-        "nyowzers-lib": "file:nyowzers-lib/src",
+        "nyowzers-lib": "file:../../nyowzers-lib/src",
         "protobufjs": "^6.11.3",
         "steam-user": "^5.2.0",
         "ws": "^8.18.0",
